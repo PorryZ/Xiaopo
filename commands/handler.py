@@ -61,14 +61,17 @@ class CommandHandler:
             "round":   self._cmd_round,
         }
 
-    def handle(self, raw_message: str) -> Optional[str]:
+    def handle(self, raw_message: str, sender_id: Optional[str] = None) -> Optional[str]:
         """
         处理一条原始消息。
         返回 None 表示该消息不是命令，不需要回复。
         """
-        cmd = parse(raw_message)
+        cmd = parse(raw_message, sender_id=sender_id)
         if cmd is None:
             return None
+
+        if cmd.error:
+            return f"⚠️ {cmd.error}"
 
         handler = self._routes.get(cmd.name)
         if handler is None:

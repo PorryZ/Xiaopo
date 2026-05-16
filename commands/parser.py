@@ -11,32 +11,52 @@ import config
 
 @dataclass
 class ParsedCommand:
-    name:    str               # e.g. "start", "r", "score", ...
+    name:    str
     args:    list[str] = field(default_factory=list)
-    raw:     str       = ""    # 原始消息（去除@后）
-    error:   Optional[str] = None  # 解析失败原因
+    raw:     str       = ""
+    error:   Optional[str] = None
 
 
 _MENTION_RE = re.compile(r"<@[^>]+>")
 
+# ── 所有已知命令关键词（用于无斜杠识别）────────────────────
+_KNOWN_COMMANDS = {
+    "help", "start", "day", "endday",
+    "r", "score", "fix", "undo",
+    "status", "today", "round",
+}
 
-def parse(raw_message: str) -> Optional[ParsedCommand]:
+
+def parse(raw_message: str, sender_id: Optional[str] = None) -> Optional[ParsedCommand]:
     """
     将一条 QQ 消息解析为 ParsedCommand。
     - 先去除 @机器人 前缀
-    - 命令必须以 / 开头
+    - 支持带斜杠（/score nj 3）和不带斜杠（score nj 3）两种写法
+    - 支持隐式 score 简写（pr 2 / 直接发数字）
     - 返回 None 表示不是一条命令（静默忽略）
     """
     text = _MENTION_RE.sub("", raw_message).strip()
 
-    if not text.startswith("/"):
-        return None   # 非命令消息，忽略
+    if not text:
+        return None
 
+    # ── 带斜杠：原有逻辑不变 ────────────────────────────────
+    if text.startswith("/"):
+        parts = text.split()
+        cmd   = parts[0][1:].lower()
+        args  = parts[1:]
+        return ParsedCommand(name=cmd, args=args, raw=text)
+
+    # ── 不带斜杠：首词匹配已知命令 ──────────────────────────
     parts = text.split()
-    cmd   = parts[0][1:].lower()   # 去掉 /，转小写
-    args  = parts[1:]
+    first = parts[0].lower()
+    if first in _KNOWN_COMMANDS:
+        return ParsedCommand(name=first, args=parts[1:], raw=text)
 
-    return ParsedCommand(name=cmd, args=args, raw=text)
+    # ── 隐式简写（原有逻辑不变）────────────────────────────
+    # 1) "pr 2"  -> score pr 2
+    # 2) "2"     -> score <sender对应玩家> 2
+    return _parse_implicit_score(text, sender_id)
 
 
 # ── 参数提取辅助 ──────────────────────────────────────────────
@@ -53,3 +73,35 @@ def parse_placement(s: str) -> Optional[int]:
         return n if n in config.PLACEMENT_SCORES else None
     except ValueError:
         return None
+
+
+def _parse_implicit_score(text: str, sender_id: Optional[str]) -> Optional[ParsedCommand]:
+    tokens = text.split()
+
+    if len(tokens) == 2:
+        player = resolve_player(tokens[0])
+        pl = parse_placement(tokens[1])
+        if player is not None and pl is not None:
+            return ParsedCommand(name="score", args=[tokens[0], tokens[1]], raw=text)
+        return None
+
+    if len(tokens) == 1 and sender_id:
+        pl = parse_placement(tokens[0])
+        if pl is None:
+            return None
+
+        mapped_alias = config.USER_PLAYER_MAP.get(str(sender_id))
+        if not mapped_alias:
+            return None
+
+        if resolve_player(mapped_alias) is None:
+            return ParsedCommand(
+                name="score",
+                args=[],
+                raw=text,
+                error=f"配置错误：用户 {sender_id} 映射到未知玩家别名「{mapped_alias}」。",
+            )
+
+        return ParsedCommand(name="score", args=[mapped_alias, tokens[0]], raw=text)
+
+    return None

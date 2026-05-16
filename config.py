@@ -35,3 +35,13 @@ PLACEMENT_SCORES: dict[int, int] = {
 WIN_SCORE_THRESHOLD = 40   # 达到此分数后吃鸡即胜
 PENALTY_AMOUNT      = 10   # 当日垫底罚款（元）
 DEFAULT_SEASON      = "大地的裂变"
+
+# 用户ID -> 玩家映射（用于 @小坡 2 这种简写）
+# key 建议填写 QQ 平台可稳定识别的用户 id/openid
+# value 可填写 PLAYER_ALIASES 中任一可识别别名（如: nj/mz/yd/pr）或玩家全名
+USER_PLAYER_MAP: dict[str, str] = {
+    "1909987F9FFE00BCD5488045176E18BF": "pr",
+    "2CA57D27CEB4BEA202910671F400007F": "mz",
+    "A3DF2E6D3A4809BCE4E7E2E010037FFD": "nj",
+    "40698434FBB0DC8ADC57AE2F7570131C": "yd",
+}
