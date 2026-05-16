@@ -31,13 +31,15 @@ class XiaoPo(botpy.Client):
 
     async def on_at_message_create(self, message: Message):
         """QQ 频道消息（@ 机器人触发）"""
-        response = self.cmd_handler.handle(message.content)
+        sender_id = str(getattr(message.author, "id", ""))
+        response = self.cmd_handler.handle(message.content, sender_id=sender_id)
         if response:
             await message.reply(content=response)
 
     async def on_group_at_message_create(self, message: GroupMessage):
         """QQ 群聊消息（@ 机器人触发）"""
-        response = self.cmd_handler.handle(message.content)
+        sender_id = str(getattr(message.author, "id", ""))
+        response = self.cmd_handler.handle(message.content, sender_id=sender_id)
         if response:
             await self.api.post_group_message(
                 group_openid=message.group_openid,
