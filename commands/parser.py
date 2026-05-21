@@ -24,6 +24,7 @@ _KNOWN_COMMANDS = {
     "help", "start", "day", "endday",
     "r", "score", "fix", "undo",
     "status", "today", "round",
+    "chat",
 }
 
 

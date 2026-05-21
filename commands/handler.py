@@ -4,6 +4,8 @@
 
 from typing import Optional
 
+import httpx
+
 import config
 from game.manager import GameManager, GameError
 from .parser import ParsedCommand, parse, resolve_player, parse_placement
@@ -36,6 +38,9 @@ _HELP = """📖 小坡机器人 · 指令列表
   /round           — 当前/最近一局详情
   /help            — 显示此帮助
 
+【AI聊天】
+  /chat <消息>     — 与 DeepSeek AI 对话
+
 玩家缩写对照：
   nj = 南街旧巷 | mz = MomentZz | yd = 樱岛麻衣 | pr = 坡瑞局"""
 
@@ -59,6 +64,7 @@ class CommandHandler:
             "status":  self._cmd_status,
             "today":   self._cmd_today,
             "round":   self._cmd_round,
+            "chat":    self._cmd_chat,
         }
 
     def handle(self, raw_message: str, sender_id: Optional[str] = None) -> Optional[str]:
@@ -170,3 +176,43 @@ class CommandHandler:
 
     def _cmd_round(self, _: ParsedCommand) -> str:
         return self.manager.get_round_status()
+
+    # ── DeepSeek AI 聊天 ────────────────────────────────────
+
+    def _cmd_chat(self, cmd: ParsedCommand) -> str:
+        """/chat <消息> — 与 DeepSeek AI 对话"""
+        if not cmd.args:
+            return "💬 你想聊什么？用法：/chat <你的消息>"
+
+        user_message = " ".join(cmd.args)
+
+        try:
+            # 使用同步 httpx 请求（因为 handle() 不是异步方法）
+            with httpx.Client(timeout=30) as client:
+                resp = client.post(
+                    f"{config.DEEPSEEK_BASE_URL}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {config.DEEPSEEK_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": config.DEEPSEEK_MODEL,
+                        "messages": [
+                            {"role": "system", "content": config.DEEPSEEK_SYSTEM_PROMPT},
+                            {"role": "user", "content": user_message},
+                        ],
+                        "max_tokens": 200,       # 进一步约束最大输出
+                        "temperature": 0.7,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                reply = data["choices"][0]["message"]["content"].strip()
+                return reply if reply else "🤔 AI 没有返回内容，请重试。"
+
+        except httpx.HTTPStatusError as e:
+            return f"❌ DeepSeek API 返回错误（{e.response.status_code}），请检查 API Key 是否有效。"
+        except httpx.TimeoutException:
+            return "⏱️ DeepSeek API 请求超时，请稍后重试。"
+        except Exception as e:
+            return f"❌ 聊天出错：{e}"

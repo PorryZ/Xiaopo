@@ -2,9 +2,8 @@
 # config.py — 全局配置，修改游戏参数在这里
 # ============================================================
 
-# ── 机器人凭证 ───────────────────────────────────────────────
-APPID  = "102342687"
-SECRET = "DzmZNC1rhYQJC61wspmkjiiijkm2JbtC"
+# ── 敏感密钥从 secrets.py 导入（已加入 .gitignore）──────────
+from secrets import APPID, SECRET, DEEPSEEK_API_KEY
 
 # ── 数据库 ───────────────────────────────────────────────────
 DATABASE_PATH = "xiaopo.db"
@@ -25,6 +24,11 @@ PLAYER_ALIASES: dict[str, str] = {
     "樱岛麻衣":  "樱岛麻衣",
     "坡瑞局":   "坡瑞局",
 }
+
+# ── DeepSeek AI 聊天 ──────────────────────────────────────────
+DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+DEEPSEEK_MODEL = "deepseek-chat"         # 便宜的对话模型
+DEEPSEEK_SYSTEM_PROMPT = "你是一个友好的聊天助手。请用中文回答，每次回答控制在50字以内，简洁明了，不要输出多余的内容。"
 
 # ── 积分规则 ─────────────────────────────────────────────────
 PLACEMENT_SCORES: dict[int, int] = {
