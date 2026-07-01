@@ -43,6 +43,19 @@ CHAT_MAX_TOKENS = 600         # 放宽回复长度，支持战报/复盘/整活
 CHAT_TEMPERATURE = 0.9        # 提高一点随机性，让回复更有趣
 CHAT_ON_UNKNOWN_MESSAGE = True  # 非命令消息是否默认进入聊天
 
+
+# ── 炉石官网数据 ─────────────────────────────────────────────
+HEARTHSTONE_BASE_URL = "https://hs.blizzard.cn"
+HEARTHSTONE_CARDS_URL = f"{HEARTHSTONE_BASE_URL}/cards/"
+HEARTHSTONE_BATTLEGROUNDS_URL = f"{HEARTHSTONE_BASE_URL}/battlegrounds/?sort=tier%3Aasc"
+HEARTHSTONE_LEADERBOARDS_URL = f"{HEARTHSTONE_BASE_URL}/community/leaderboards/"
+HEARTHSTONE_USER_AGENT = "XiaoPoBot/1.0 (+https://hs.blizzard.cn/)"
+HEARTHSTONE_CARDS_CACHE_SECONDS = 24 * 60 * 60
+HEARTHSTONE_LEADERBOARD_CACHE_SECONDS = 10 * 60
+HEARTHSTONE_CHAT_CARD_CONTEXT_LIMIT = 3
+HEARTHSTONEJSON_CARDS_URL = "https://api.hearthstonejson.com/v1/latest/zhCN/cards.json"
+HEARTHSTONEJSON_RENDER_URL_TEMPLATE = "https://art.hearthstonejson.com/v1/render/latest/zhCN/256x/{card_id}.png"
+
 # ── 积分规则 ─────────────────────────────────────────────────
 PLACEMENT_SCORES: dict[int, int] = {
     1: 9, 2: 7, 3: 6, 4: 5,
