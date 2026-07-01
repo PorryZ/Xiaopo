@@ -2,6 +2,7 @@
 # commands/handler.py — 将解析后的命令路由到 GameManager
 # ============================================================
 
+import re
 from typing import Optional
 
 import httpx
@@ -51,6 +52,9 @@ class CommandHandler:
     def __init__(self, manager: GameManager):
         self.manager = manager
 
+        # 共享对话记忆（所有用户共用，保留最近 10 轮）
+        self._chat_history: list[dict] = []
+
         # 路由表：命令名 -> 处理方法
         self._routes = {
             "help":    self._cmd_help,
@@ -67,14 +71,21 @@ class CommandHandler:
             "chat":    self._cmd_chat,
         }
 
+    _MENTION_RE = re.compile(r"<@[^>]+>")
+
     def handle(self, raw_message: str, sender_id: Optional[str] = None) -> Optional[str]:
         """
         处理一条原始消息。
-        返回 None 表示该消息不是命令，不需要回复。
+        如果不是任何已知命令，默认当作 /chat 处理。
         """
         cmd = parse(raw_message, sender_id=sender_id)
+
+        # ── 不是命令 → 默认走 chat ──────────────────────────
         if cmd is None:
-            return None
+            text = self._MENTION_RE.sub("", raw_message).strip()
+            if not text:
+                return None
+            cmd = ParsedCommand(name="chat", args=text.split(), raw=text)
 
         if cmd.error:
             return f"⚠️ {cmd.error}"
@@ -177,17 +188,25 @@ class CommandHandler:
     def _cmd_round(self, _: ParsedCommand) -> str:
         return self.manager.get_round_status()
 
-    # ── DeepSeek AI 聊天 ────────────────────────────────────
+    # ── DeepSeek AI 聊天（带对话记忆）────────────────────────
 
     def _cmd_chat(self, cmd: ParsedCommand) -> str:
-        """/chat <消息> — 与 DeepSeek AI 对话"""
+        """/chat <消息> — 与 DeepSeek AI 对话（所有用户共享记忆）"""
         if not cmd.args:
             return "💬 你想聊什么？用法：/chat <你的消息>"
 
         user_message = " ".join(cmd.args)
 
+        # 把用户新消息加入共享历史
+        self._chat_history.append({"role": "user", "content": user_message})
+
+        # 构造 API 请求消息列表：系统提示词 + 最近 20 条（≈10轮对话）
+        api_messages = [
+            {"role": "system", "content": config.DEEPSEEK_SYSTEM_PROMPT},
+            *self._chat_history[-20:],
+        ]
+
         try:
-            # 使用同步 httpx 请求（因为 handle() 不是异步方法）
             with httpx.Client(timeout=30) as client:
                 resp = client.post(
                     f"{config.DEEPSEEK_BASE_URL}/chat/completions",
@@ -197,17 +216,22 @@ class CommandHandler:
                     },
                     json={
                         "model": config.DEEPSEEK_MODEL,
-                        "messages": [
-                            {"role": "system", "content": config.DEEPSEEK_SYSTEM_PROMPT},
-                            {"role": "user", "content": user_message},
-                        ],
-                        "max_tokens": 200,       # 进一步约束最大输出
+                        "messages": api_messages,
+                        "max_tokens": 200,
                         "temperature": 0.7,
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
                 reply = data["choices"][0]["message"]["content"].strip()
+
+                # 把 AI 回复也记入共享历史
+                self._chat_history.append({"role": "assistant", "content": reply})
+
+                # 只保留最近 10 轮（20 条消息）
+                if len(self._chat_history) > 20:
+                    self._chat_history[:] = self._chat_history[-20:]
+
                 return reply if reply else "🤔 AI 没有返回内容，请重试。"
 
         except httpx.HTTPStatusError as e:

@@ -27,8 +27,8 @@ PLAYER_ALIASES: dict[str, str] = {
 
 # ── DeepSeek AI 聊天 ──────────────────────────────────────────
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-chat"         # 便宜的对话模型
-DEEPSEEK_SYSTEM_PROMPT = "你是一个友好的聊天助手。请用中文回答，每次回答控制在50字以内，简洁明了，不要输出多余的内容。"
+DEEPSEEK_MODEL = "deepseek-chat" 
+DEEPSEEK_SYSTEM_PROMPT = "你是一个友好的聊天助手，你叫小坡，你的主人是PorryZ。请用中文回答，每次回答控制在50字以内，简洁明了，不要输出多余的内容。"
 
 # ── 积分规则 ─────────────────────────────────────────────────
 PLACEMENT_SCORES: dict[int, int] = {
