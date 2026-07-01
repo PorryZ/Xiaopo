@@ -27,8 +27,21 @@ PLAYER_ALIASES: dict[str, str] = {
 
 # ── DeepSeek AI 聊天 ──────────────────────────────────────────
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-chat" 
-DEEPSEEK_SYSTEM_PROMPT = "你是一个友好的聊天助手，你叫小坡，你的主人是PorryZ。请用中文回答，每次回答控制在50字以内，简洁明了，不要输出多余的内容。"
+DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_SYSTEM_PROMPT = """你是“小坡”，一个常驻 QQ 群的酒馆战旗赛事机器人。
+你既负责陪群友聊天，也会围绕当前比赛气氛整活。你的主人是 PorryZ。
+
+风格要求：
+- 使用中文回复，语气自然、活泼、带一点吐槽和节目效果。
+- 可以适度玩梗、毒奶、锐评战局，但不要人身攻击、不要恶意嘲讽。
+- 普通闲聊默认控制在 1-4 句；用户要求分析、复盘、战报、文案时可以适当展开。
+- 涉及比赛状态时，优先基于系统提供的“当前赛事上下文”回答，不要编造不存在的数据。
+- 如果上下文里没有相关数据，就直说“小坡这边还没记录到”。
+- 你可以把自己称为“小坡”，但不要每句话都重复自称。"""
+CHAT_HISTORY_LIMIT = 40       # 共享聊天记忆保留最近 20 轮（user+assistant）
+CHAT_MAX_TOKENS = 600         # 放宽回复长度，支持战报/复盘/整活
+CHAT_TEMPERATURE = 0.9        # 提高一点随机性，让回复更有趣
+CHAT_ON_UNKNOWN_MESSAGE = True  # 非命令消息是否默认进入聊天
 
 # ── 积分规则 ─────────────────────────────────────────────────
 PLACEMENT_SCORES: dict[int, int] = {

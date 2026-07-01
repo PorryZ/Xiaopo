@@ -41,6 +41,10 @@ _HELP = """📖 小坡机器人 · 指令列表
 
 【AI聊天】
   /chat <消息>     — 与 DeepSeek AI 对话
+  /talk <消息>     — /chat 的口语化别名
+  /recap           — 结合当前比赛生成小坡战报
+  /predict         — 结合当前比赛进行毒奶预测
+  /forget          — 清空聊天记忆
 
 玩家缩写对照：
   nj = 南街旧巷 | mz = MomentZz | yd = 樱岛麻衣 | pr = 坡瑞局"""
@@ -52,7 +56,7 @@ class CommandHandler:
     def __init__(self, manager: GameManager):
         self.manager = manager
 
-        # 共享对话记忆（所有用户共用，保留最近 10 轮）
+        # 共享对话记忆（所有用户共用，长度由 config.CHAT_HISTORY_LIMIT 控制）
         self._chat_history: list[dict] = []
 
         # 路由表：命令名 -> 处理方法
@@ -69,6 +73,10 @@ class CommandHandler:
             "today":   self._cmd_today,
             "round":   self._cmd_round,
             "chat":    self._cmd_chat,
+            "talk":    self._cmd_chat,
+            "recap":   self._cmd_recap,
+            "predict": self._cmd_predict,
+            "forget":  self._cmd_forget,
         }
 
     _MENTION_RE = re.compile(r"<@[^>]+>")
@@ -82,6 +90,8 @@ class CommandHandler:
 
         # ── 不是命令 → 默认走 chat ──────────────────────────
         if cmd is None:
+            if not config.CHAT_ON_UNKNOWN_MESSAGE:
+                return None
             text = self._MENTION_RE.sub("", raw_message).strip()
             if not text:
                 return None
@@ -188,7 +198,7 @@ class CommandHandler:
     def _cmd_round(self, _: ParsedCommand) -> str:
         return self.manager.get_round_status()
 
-    # ── DeepSeek AI 聊天（带对话记忆）────────────────────────
+    # ── DeepSeek AI 聊天（带赛事上下文和对话记忆）──────────────
 
     def _cmd_chat(self, cmd: ParsedCommand) -> str:
         """/chat <消息> — 与 DeepSeek AI 对话（所有用户共享记忆）"""
@@ -196,14 +206,47 @@ class CommandHandler:
             return "💬 你想聊什么？用法：/chat <你的消息>"
 
         user_message = " ".join(cmd.args)
+        if user_message.lower() in {"reset", "clear", "forget"}:
+            return self._reset_chat_history()
 
-        # 把用户新消息加入共享历史
-        self._chat_history.append({"role": "user", "content": user_message})
+        return self._ask_ai(user_message)
 
-        # 构造 API 请求消息列表：系统提示词 + 最近 20 条（≈10轮对话）
+    def _cmd_recap(self, cmd: ParsedCommand) -> str:
+        """/recap — 结合当前比赛上下文生成小坡战报"""
+        extra = " ".join(cmd.args).strip()
+        prompt = (
+            "请结合当前赛事上下文，生成一段 QQ 群风格的酒馆战旗战报。"
+            "要求：有标题感，突出领先、垫底、悬念和节目效果；不要编造上下文没有的数据。"
+        )
+        if extra:
+            prompt += f"\n用户补充要求：{extra}"
+        return self._ask_ai(prompt, remember=False)
+
+    def _cmd_predict(self, cmd: ParsedCommand) -> str:
+        """/predict — 结合当前比赛上下文进行毒奶预测"""
+        extra = " ".join(cmd.args).strip()
+        prompt = (
+            "请结合当前赛事上下文，做一次轻松搞笑的毒奶预测。"
+            "可以预测冠军、下一局走势、危险位，但必须说明这是娱乐预测；不要编造上下文没有的数据。"
+        )
+        if extra:
+            prompt += f"\n用户补充要求：{extra}"
+        return self._ask_ai(prompt, remember=False)
+
+    def _cmd_forget(self, _: ParsedCommand) -> str:
+        """/forget — 清空共享聊天记忆"""
+        return self._reset_chat_history()
+
+    def _ask_ai(self, user_message: str, *, remember: bool = True) -> str:
+        """调用 DeepSeek，并按需维护共享聊天记忆。"""
+        user_entry = {"role": "user", "content": user_message}
+
+        # 构造 API 请求消息列表：系统提示词 + 赛事上下文 + 最近聊天记忆 + 当前消息
         api_messages = [
             {"role": "system", "content": config.DEEPSEEK_SYSTEM_PROMPT},
-            *self._chat_history[-20:],
+            {"role": "system", "content": self._build_chat_context()},
+            *self._chat_history[-config.CHAT_HISTORY_LIMIT:],
+            user_entry,
         ]
 
         try:
@@ -217,26 +260,73 @@ class CommandHandler:
                     json={
                         "model": config.DEEPSEEK_MODEL,
                         "messages": api_messages,
-                        "max_tokens": 200,
-                        "temperature": 0.7,
+                        "max_tokens": config.CHAT_MAX_TOKENS,
+                        "temperature": config.CHAT_TEMPERATURE,
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
                 reply = data["choices"][0]["message"]["content"].strip()
 
-                # 把 AI 回复也记入共享历史
-                self._chat_history.append({"role": "assistant", "content": reply})
-
-                # 只保留最近 10 轮（20 条消息）
-                if len(self._chat_history) > 20:
-                    self._chat_history[:] = self._chat_history[-20:]
+                if remember:
+                    self._chat_history.append(user_entry)
+                    self._chat_history.append({"role": "assistant", "content": reply})
+                    self._trim_chat_history()
 
                 return reply if reply else "🤔 AI 没有返回内容，请重试。"
 
         except httpx.HTTPStatusError as e:
-            return f"❌ DeepSeek API 返回错误（{e.response.status_code}），请检查 API Key 是否有效。"
+            return self._format_deepseek_http_error(e.response.status_code)
         except httpx.TimeoutException:
             return "⏱️ DeepSeek API 请求超时，请稍后重试。"
         except Exception as e:
             return f"❌ 聊天出错：{e}"
+
+    def _build_chat_context(self) -> str:
+        """为聊天模型提供当前赛事上下文。"""
+        context_blocks = [
+            "【当前赛事上下文】",
+            f"参赛选手：{'、'.join(config.PLAYER_ORDER)}",
+            (
+                "积分规则："
+                + "、".join(
+                    f"第{placement}名={score}分"
+                    for placement, score in sorted(config.PLACEMENT_SCORES.items())
+                )
+            ),
+            f"胜利条件：累计达到 {config.WIN_SCORE_THRESHOLD} 分后吃鸡即胜。",
+            f"每日垫底罚款：{config.PENALTY_AMOUNT} 元。",
+            "",
+            "【本场状态】",
+            self.manager.get_status(),
+            "",
+            "【今日状态】",
+            self.manager.get_today_status(),
+            "",
+            "【当前/最近一局】",
+            self.manager.get_round_status(),
+            "",
+            "请基于以上上下文回答。没有记录到的数据不要编造。",
+        ]
+        return "\n".join(context_blocks)
+
+    def _reset_chat_history(self) -> str:
+        """清空共享聊天记忆。"""
+        self._chat_history.clear()
+        return "🧹 聊天记忆已清空。小坡刚才什么都没看见，我们重新做人！"
+
+    def _trim_chat_history(self):
+        """按配置裁剪共享聊天记忆。"""
+        if len(self._chat_history) > config.CHAT_HISTORY_LIMIT:
+            self._chat_history[:] = self._chat_history[-config.CHAT_HISTORY_LIMIT:]
+
+    @staticmethod
+    def _format_deepseek_http_error(status_code: int) -> str:
+        """把 DeepSeek HTTP 状态码转成更容易理解的群聊提示。"""
+        if status_code in {401, 403}:
+            return f"❌ DeepSeek API 认证失败（{status_code}），请检查 API Key 或权限。"
+        if status_code == 429:
+            return "❌ DeepSeek API 调用太频繁（429），小坡先喘口气，稍后再试。"
+        if 500 <= status_code < 600:
+            return f"❌ DeepSeek 服务暂时异常（{status_code}），请稍后重试。"
+        return f"❌ DeepSeek API 返回错误（{status_code}），请稍后重试。"
