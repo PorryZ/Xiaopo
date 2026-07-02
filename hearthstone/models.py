@@ -24,7 +24,7 @@ class HearthstoneCard:
     mode: str = "standard"
     extra: dict[str, Any] = field(default_factory=dict)
 
-    def compact(self) -> str:
+    def compact(self, *, include_image_url: bool = True) -> str:
         """生成适合 QQ 文本消息的紧凑展示。"""
         parts = [f"🃏 {self.name}"]
         attrs: list[str] = []
@@ -41,7 +41,7 @@ class HearthstoneCard:
             parts.append("｜".join(attrs))
         if self.text:
             parts.append(self.text)
-        if self.image_url:
+        if include_image_url and self.image_url:
             parts.append(f"🖼️ 图片：{self.image_url}")
         if self.source_url:
             parts.append(f"🔗 来源：{self.source_url}")

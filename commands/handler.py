@@ -10,6 +10,7 @@ import httpx
 import config
 from game.manager import GameManager, GameError
 from hearthstone.service import HearthstoneService, OfficialSiteError
+from .response import BotResponse
 from .parser import ParsedCommand, parse, resolve_player, parse_placement
 
 # ── 帮助文本 ──────────────────────────────────────────────────
@@ -48,7 +49,7 @@ _HELP = """📖 小坡机器人 · 指令列表
   /forget          — 清空聊天记忆
 
 【炉石官网查询】
-  /card <卡牌名>      — 查询官方卡牌效果与图片链接
+  /card <卡牌名>      — 查询官方卡牌效果并直发图片
   /bgcard <名称>      — 查询官方酒馆战棋卡牌/随从
   /leaderboard [数量] — 查询官方排行榜（默认前10）
   /hsrefresh          — 清空炉石官网数据缓存
@@ -94,7 +95,7 @@ class CommandHandler:
 
     _MENTION_RE = re.compile(r"<@[^>]+>")
 
-    def handle(self, raw_message: str, sender_id: Optional[str] = None) -> Optional[str]:
+    def handle(self, raw_message: str, sender_id: Optional[str] = None) -> Optional[str | BotResponse]:
         """
         处理一条原始消息。
         如果不是任何已知命令，默认当作 /chat 处理。
@@ -213,7 +214,7 @@ class CommandHandler:
 
     # ── DeepSeek AI 聊天（带赛事上下文和对话记忆）──────────────
 
-    def _cmd_chat(self, cmd: ParsedCommand) -> str:
+    def _cmd_chat(self, cmd: ParsedCommand) -> str | BotResponse:
         """/chat <消息> — 与 DeepSeek AI 对话（所有用户共享记忆）"""
         if not cmd.args:
             return "💬 你想聊什么？用法：/chat <你的消息>"
@@ -222,7 +223,8 @@ class CommandHandler:
         if user_message.lower() in {"reset", "clear", "forget"}:
             return self._reset_chat_history()
 
-        return self._ask_ai(user_message)
+        reply = self._ask_ai(user_message)
+        return BotResponse(content=reply, image_urls=self._find_chat_card_images(user_message))
 
     def _cmd_recap(self, cmd: ParsedCommand) -> str:
         """/recap — 结合当前比赛上下文生成小坡战报"""
@@ -250,7 +252,7 @@ class CommandHandler:
         """/forget — 清空共享聊天记忆"""
         return self._reset_chat_history()
 
-    def _cmd_card(self, cmd: ParsedCommand) -> str:
+    def _cmd_card(self, cmd: ParsedCommand) -> str | BotResponse:
         """/card <卡牌名> — 查询构筑卡牌。"""
         keyword = " ".join(cmd.args).strip()
         if not keyword:
@@ -261,9 +263,9 @@ class CommandHandler:
             return f"⚠️ 官网数据暂时不可用：{e}"
         if card is None:
             return f"🔎 没有找到与「{keyword}」匹配的官方卡牌。"
-        return card.compact()
+        return BotResponse.image(card.compact(include_image_url=False), card.image_url)
 
-    def _cmd_bgcard(self, cmd: ParsedCommand) -> str:
+    def _cmd_bgcard(self, cmd: ParsedCommand) -> str | BotResponse:
         """/bgcard <名称> — 查询酒馆战棋卡牌。"""
         keyword = " ".join(cmd.args).strip()
         if not keyword:
@@ -274,7 +276,7 @@ class CommandHandler:
             return f"⚠️ 官网数据暂时不可用：{e}"
         if card is None:
             return f"🔎 没有找到与「{keyword}」匹配的酒馆战棋卡牌。"
-        return card.compact()
+        return BotResponse.image(card.compact(include_image_url=False), card.image_url)
 
     def _cmd_leaderboard(self, cmd: ParsedCommand) -> str:
         """/leaderboard [数量] — 查询官方排行榜。"""
@@ -299,6 +301,18 @@ class CommandHandler:
         """/hsrefresh — 清空炉石官网数据缓存。"""
         self.hearthstone.clear_cache()
         return "♻️ 已清空炉石官网数据缓存，下次查询会重新拉取。"
+
+
+    def _find_chat_card_images(self, user_message: str) -> list[str]:
+        """聊天命中卡牌时，返回需要随消息直发的卡图。"""
+        try:
+            cards = self.hearthstone.find_cards_in_text(
+                user_message,
+                limit=config.HEARTHSTONE_CHAT_CARD_CONTEXT_LIMIT,
+            )
+        except OfficialSiteError:
+            return []
+        return [card.image_url for card in cards if card.image_url]
 
     def _ask_ai(self, user_message: str, *, remember: bool = True) -> str:
         """调用 DeepSeek，并按需维护共享聊天记忆。"""

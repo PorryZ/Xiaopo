@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from difflib import get_close_matches
+from difflib import SequenceMatcher, get_close_matches
 
 import config
 from .cache import TtlCache
@@ -43,15 +43,39 @@ class HearthstoneService:
         cards = self._get_cards() + self._get_battlegrounds_cards()
         found: list[HearthstoneCard] = []
         seen: set[str] = set()
+
+        def add(card: HearthstoneCard) -> None:
+            key = f"{card.mode}:{card.name}"
+            if key not in seen and len(found) < limit:
+                found.append(card)
+                seen.add(key)
+
+        normalized_text = self._normalize(text)
+
+        for alias, official_name in config.HEARTHSTONE_CARD_ALIASES.items():
+            if alias in text or self._normalize(alias) in normalized_text:
+                card = self._best_card_match(official_name, cards)
+                if card is not None:
+                    add(card)
+
         for card in sorted(cards, key=lambda c: len(c.name), reverse=True):
             if len(card.name) < 2:
                 continue
-            key = f"{card.mode}:{card.name}"
-            if key not in seen and card.name in text:
-                found.append(card)
-                seen.add(key)
+            normalized_name = self._normalize(card.name)
+            if card.name in text or normalized_name in normalized_text:
+                add(card)
+            if len(found) >= limit:
+                return found
+
+        for candidate in self._candidate_phrases(text):
+            card = self._best_card_match(candidate, cards)
+            if card is None:
+                card = next((item for item in cards if self._is_confident_match(candidate, item.name)), None)
+            if card is not None and self._is_confident_match(candidate, card.name):
+                add(card)
             if len(found) >= limit:
                 break
+
         return found
 
     def get_leaderboard(self, *, limit: int = 10) -> list[LeaderboardEntry]:
@@ -87,19 +111,66 @@ class HearthstoneService:
         except OfficialSiteError:
             return self._fallback_client.fetch_battlegrounds_cards()
 
-    @staticmethod
-    def _best_card_match(keyword: str, cards: list[HearthstoneCard]) -> HearthstoneCard | None:
-        exact = [card for card in cards if card.name == keyword]
+    @classmethod
+    def _best_card_match(cls, keyword: str, cards: list[HearthstoneCard]) -> HearthstoneCard | None:
+        official_name = config.HEARTHSTONE_CARD_ALIASES.get(keyword, keyword)
+        normalized_keyword = cls._normalize(official_name)
+        exact = [card for card in cards if card.name == official_name or cls._normalize(card.name) == normalized_keyword]
         if exact:
             return exact[0]
-        contains = [card for card in cards if keyword.lower() in card.name.lower()]
+        contains = [card for card in cards if normalized_keyword in cls._normalize(card.name)]
         if contains:
             return sorted(contains, key=lambda c: len(c.name))[0]
         names = [card.name for card in cards]
-        matches = get_close_matches(keyword, names, n=1, cutoff=0.55)
+        matches = get_close_matches(official_name, names, n=1, cutoff=0.55)
         if not matches:
-            return None
+            normalized_names = {cls._normalize(card.name): card.name for card in cards}
+            normalized_matches = get_close_matches(normalized_keyword, list(normalized_names), n=1, cutoff=0.65)
+            if not normalized_matches:
+                return None
+            return next(card for card in cards if card.name == normalized_names[normalized_matches[0]])
         return next(card for card in cards if card.name == matches[0])
+
+    @classmethod
+    def _candidate_phrases(cls, text: str) -> list[str]:
+        phrases: list[str] = []
+        current = ""
+        for char in text:
+            if char.isalnum() or cls._is_cjk(char) or char in "·-_'":
+                current += char
+            elif current:
+                phrases.append(current)
+                current = ""
+        if current:
+            phrases.append(current)
+        phrases.extend(text[i:j] for i in range(len(text)) for j in range(i + 2, min(len(text), i + 8) + 1))
+        return sorted(set(phrases), key=len, reverse=True)
+
+    @classmethod
+    def _is_confident_match(cls, keyword: str, card_name: str) -> bool:
+        normalized_keyword = cls._normalize(keyword)
+        normalized_name = cls._normalize(card_name)
+        if len(normalized_keyword) < 2:
+            return False
+        if normalized_keyword in normalized_name or normalized_name in normalized_keyword:
+            return True
+        if SequenceMatcher(None, normalized_keyword, normalized_name).ratio() >= 0.72:
+            return True
+        size = len(normalized_keyword)
+        if 2 <= size < len(normalized_name):
+            return any(
+                SequenceMatcher(None, normalized_keyword, normalized_name[i:i + size]).ratio() >= 0.5
+                for i in range(0, len(normalized_name) - size + 1)
+            )
+        return False
+
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        return "".join(char.lower() for char in value if char.isalnum() or cls._is_cjk(char))
+
+    @staticmethod
+    def _is_cjk(char: str) -> bool:
+        return 0x4E00 <= ord(char) <= 0x9FFF
 
 
 __all__ = ["HearthstoneService", "OfficialSiteError"]

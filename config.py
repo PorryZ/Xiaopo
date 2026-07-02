@@ -55,6 +55,18 @@ HEARTHSTONE_LEADERBOARD_CACHE_SECONDS = 10 * 60
 HEARTHSTONE_CHAT_CARD_CONTEXT_LIMIT = 3
 HEARTHSTONEJSON_CARDS_URL = "https://api.hearthstonejson.com/v1/latest/zhCN/cards.json"
 HEARTHSTONEJSON_RENDER_URL_TEMPLATE = "https://art.hearthstonejson.com/v1/render/latest/zhCN/256x/{card_id}.png"
+HEARTHSTONE_CARD_ALIASES: dict[str, str] = {
+    "雷诺": "雷诺·杰克逊",
+    "铜须": "布莱恩·铜须",
+    "女巴": "巴罗夫领主",
+    "导演": "经理马林",
+    "螺丝": "炎魔之王拉格纳罗斯",
+    "红龙": "阿莱克丝塔萨",
+    "蓝龙": "玛里苟斯",
+    "绿龙": "伊瑟拉",
+    "吼爹": "格罗玛什·地狱咆哮",
+    "939": "虚空领主",
+}
 
 # ── 积分规则 ─────────────────────────────────────────────────
 PLACEMENT_SCORES: dict[int, int] = {
