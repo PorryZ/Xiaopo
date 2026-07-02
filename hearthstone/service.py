@@ -131,12 +131,12 @@ class HearthstoneService:
             return next(card for card in cards if card.name == normalized_names[normalized_matches[0]])
         return next(card for card in cards if card.name == matches[0])
 
-    @staticmethod
-    def _candidate_phrases(text: str) -> list[str]:
+    @classmethod
+    def _candidate_phrases(cls, text: str) -> list[str]:
         phrases: list[str] = []
         current = ""
         for char in text:
-            if char.isalnum() or "一" <= char <= "鿿" or char in "·-_'":
+            if char.isalnum() or cls._is_cjk(char) or char in "·-_'":
                 current += char
             elif current:
                 phrases.append(current)
@@ -164,9 +164,13 @@ class HearthstoneService:
             )
         return False
 
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        return "".join(char.lower() for char in value if char.isalnum() or cls._is_cjk(char))
+
     @staticmethod
-    def _normalize(value: str) -> str:
-        return "".join(char.lower() for char in value if char.isalnum() or "一" <= char <= "鿿")
+    def _is_cjk(char: str) -> bool:
+        return 0x4E00 <= ord(char) <= 0x9FFF
 
 
 __all__ = ["HearthstoneService", "OfficialSiteError"]
