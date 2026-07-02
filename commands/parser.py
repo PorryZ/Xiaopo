@@ -25,6 +25,7 @@ _KNOWN_COMMANDS = {
     "r", "score", "fix", "undo",
     "status", "today", "round",
     "chat", "talk", "recap", "predict", "forget",
+    "card", "bgcard", "leaderboard", "rank", "hsrefresh",
 }
 
 
